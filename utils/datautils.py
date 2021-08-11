@@ -1,5 +1,7 @@
-import numpy as np
+from os import listdir
 from os.path import join, splitext, basename
+import matplotlib.pyplot as plt
+import numpy as np
 from PIL import Image
 
 
@@ -88,9 +90,28 @@ def patch_dataset(X, Y, shape, overlap, x_as_function=False, cond=None):
                                             cond=cond)
         X_patched.append(x_patches)
         Y_patched.append(y_patches)
-    X_patched = np.concatenate(X_patched)
-    Y_patched = np.concatenate(Y_patched)
     return X_patched, Y_patched
+
+
+def open_all_patched(x_dir, y_dir, show=False):
+    X_filenames = listdir(x_dir)  # == listdir(Y_DIR)
+    X_all, Y_all = [], []
+    for X_filename in X_filenames:
+        name = splitext(X_filename)[0]
+
+        X = np.load(join(x_dir, f'{name}.npz'))['arr_0']
+        Y = np.load(join(y_dir, f'{name}.npz'))['arr_0']
+
+        if show:
+            for x, y in zip(X, Y):
+                fig, axes = plt.subplots(1, 2)
+                axes[0].imshow(x)
+                axes[1].imshow(y)
+                plt.show()
+
+        X_all.append(X)
+        Y_all.append(Y)
+    return X_all, Y_all
 
 
 if __name__ == '__main__':

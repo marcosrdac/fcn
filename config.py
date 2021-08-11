@@ -2,10 +2,13 @@ from os.path import join
 from utils.labelutils import Label
 
 DATA = '/home/marcosrdac/tmp/los/unet_training'
-INPUT_DIR = join(DATA, 'input')
+INPUT_DIR = join(DATA, 'image')  # just in this case!
 OUTPUT_DIR = join(DATA, 'output')
 IMAGE_DIR = join(DATA, 'image')
 LABEL_DIR = join(DATA, 'label')
+PATCHED_DIR = join(DATA, 'patched')
+X_DIR = join(PATCHED_DIR, 'x')
+Y_DIR = join(PATCHED_DIR, 'y')
 
 CLASSES = [
     Label('oil', 'Oil spill'),

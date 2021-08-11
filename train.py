@@ -4,14 +4,18 @@ from functools import partial
 from time import time
 import numpy as np
 import jax
-from jax import lax
 from jax import random, numpy as jnp
 from jax import jit, value_and_grad
 from flax import optim
-from digits import get_digits_data, show_digits
 from sklearn.model_selection import train_test_split
-from unet import BatchFCN
 import matplotlib.pyplot as plt
+from unet import BatchFCN
+from config import INPUT_DIR, OUTPUT_DIR, IMAGE_DIR, LABEL_DIR, CLASSES, X_DIR, Y_DIR
+from utils.labelutils import gen_dataset
+from utils.datautils import open_all_patched
+from utils.plotutils import show_data
+
+CLASS_NAMES = [c.name for c in CLASSES]
 
 
 def xentropy(logits, labels):
@@ -19,20 +23,20 @@ def xentropy(logits, labels):
     return -jnp.sum(logits * labels, axis=-1)
 
 
-def onehot(labels, nclasses=10):
-    '''One-hot encoder. Example transform: [3] -> [0, 0, 1].'''
+def onehot(labels, nclasses):
+    '''One-hot encoder. Example transform: [2] -> [0, 0, 1].'''
     classes = jnp.arange(nclasses)
-    x = labels == classes
-    return x.astype(float)
+    logits = labels[..., None] == classes[None, None, None, :]
+    return logits.astype(jnp.float32)
 
 
-def xentropy_loss(ŷ_logits, y, nclasses):
+def xentropy_loss(ŷ_logits, y, nclasses, idx=None):
     '''
     Cross-entropy loss function based on logits, labels and a number of
     classes.
     '''
     labels = onehot(y, nclasses)
-    return jnp.mean(xentropy(ŷ_logits, labels))
+    return jnp.mean(xentropy(ŷ_logits[idx], labels[idx]))
 
 
 def accuracy(ŷ, y):
@@ -40,21 +44,24 @@ def accuracy(ŷ, y):
     return jnp.mean(ŷ == y)
 
 
-def eval_metrics(Ŷ, Y, **other_metrics):
+def eval_metrics(Ŷ, Y, idx=None, **other_metrics):
     '''
     Evaluate metrics of a model.
     '''
     return {
         **other_metrics,
-        'accuracy': accuracy(Ŷ, Y),
-        # 'acc': accuracy(Ŷ, Y),
+        'accuracy': accuracy(Ŷ[idx], Y[idx]),
     }
 
 
 # getting data
-masked_numbers = ()
-X, Y, labels, classes = get_digits_data(*masked_numbers)
-nclasses = len(classes)
+nclasses = len(CLASS_NAMES)
+X, Y = open_all_patched(X_DIR, Y_DIR)
+X, Y = np.concatenate(X), np.concatenate(Y)
+# print(X.shape)
+# X, Y = X[:30], Y[:30]
+# print(X.shape)
+# exit()
 
 # hold-out validation setup
 X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=1 / 3)
@@ -94,12 +101,12 @@ predict = partial(model.apply, rngs=apply_rngs, mutable=mutable)
 
 
 @jit
-def train_step(optimizer, X, Y):
+def train_step(optimizer, X, Y, masked_idx):
     '''Train model with batched data.'''
     def loss_fun(variables):
         '''Loss function for weights optimization.'''
         Ŷ_logits, *mutated_vars = predict(variables, X, proba=True)
-        loss = xentropy_loss(Ŷ_logits, Y, nclasses)
+        loss = xentropy_loss(Ŷ_logits, Y, nclasses, masked_idx)
         return loss, (Ŷ_logits, *mutated_vars)
 
     lossgrad_fun = value_and_grad(loss_fun, has_aux=True)
@@ -108,7 +115,7 @@ def train_step(optimizer, X, Y):
     optimizer = optimizer.apply_gradient(lossgrad)
 
     Ŷ = jnp.argmax(Ŷ_logits, -1)[..., None]
-    metrics = eval_metrics(Ŷ, Y, loss=loss)
+    metrics = eval_metrics(Ŷ, Y, masked_idx, loss=loss)
 
     return optimizer, metrics
 
@@ -125,7 +132,10 @@ def train_epoch(optimizer, X, Y, rng, batch_size=None):
 
     # pmap here
     for perm in perms:
-        optimizer, metrics = train_step(optimizer, X[perm], Y[perm])
+        X_batch, Y_batch = X[perm], Y[perm]
+        masked_idx = jnp.where(Y_batch > -1)
+        optimizer, metrics = train_step(optimizer, X_batch, Y_batch,
+                                        masked_idx)
         batch_metrics.append(metrics)
 
     # getting mean train metrics
@@ -138,12 +148,12 @@ def train_epoch(optimizer, X, Y, rng, batch_size=None):
 
 
 @jit
-def eval_epoch(variables, X, Y):
+def eval_epoch(variables, X, Y, idx):
     Ŷ_logits, *_ = predict(variables, X, proba=True)
-    loss = xentropy_loss(Ŷ_logits, Y, nclasses)
+    loss = xentropy_loss(Ŷ_logits, Y, nclasses, idx)
 
-    Ŷ = jnp.argmax(Ŷ_logits, -1)[..., None]
-    return Ŷ, eval_metrics(Ŷ, Y, loss=loss)
+    Ŷ = jnp.argmax(Ŷ_logits, -1)
+    return Ŷ, eval_metrics(Ŷ, Y, idx, loss=loss)
 
 
 # setting histories up
@@ -154,17 +164,22 @@ print(jax.tree_map(jnp.shape, variables))
 init_variables = variables
 
 # training
-epochs = 400
+epochs = 50
 # learning_rates = 10**np.linspace(-1, 2, 8)
 # learning_rates = 1e-3, 1e-2, 1e-1,
 learning_rates = 1e-2,
-batch_size = None
+batch_size = 20
 
 for learning_rate in learning_rates:
     # defining optimizer
     optimizer_method = optim.Adam(learning_rate=learning_rate)
     variables = {'params': init_variables['params']}
     optimizer = optimizer_method.create(variables)
+
+    # # compile train_step by running it for the first time...
+    # train_step(optimizer, X[:1, :32, :32], Y[:1, :32, :32],
+    #            np.where(Y[:1, :32, :32] > -1))
+    # print('compilei')
 
     # tracking train and test metrics
     train_history = []
@@ -175,52 +190,44 @@ for learning_rate in learning_rates:
     for epoch in range(1, epochs + 1):
         try:
             train_rng, epoch_rng = random.split(train_rng)
-            optimizer, train_metrics = train_epoch(optimizer, X_train, Y_train, epoch_rng,
-                                                   batch_size)
+            optimizer, train_metrics = train_epoch(optimizer, X_train, Y_train,
+                                                   epoch_rng, batch_size)
 
             # update params
             variables = optimizer.target
 
             # eval step
-            Ŷ_test, test_metrics = eval_epoch(variables, X_test, Y_test)
+            masked_idx = jnp.where(Y_test > -1)
+            Ŷ_test, test_metrics = eval_epoch(variables, X_test, Y_test,
+                                              masked_idx)
 
             train_history.append(train_metrics)
             test_history.append(test_metrics)
 
             # print to screen
             print(f'{epoch}', end=' ')
-            print(f"train loss: {train_metrics['loss']:.1e}",
-                  f"test loss: {test_metrics['loss']:.1e}",
-                  f"acc: {test_metrics['accuracy']:.0%}",
-                  sep=' | ',
-                  end='\n')
+            print(
+                f"train loss: {train_metrics['loss']:.1e}",
+                # f"test loss: {test_metrics['loss']:.1e}",
+                f"acc: {test_metrics['accuracy']:.0%}",
+                sep=' | ',
+                end='\n')
 
-            end = time()
         except KeyboardInterrupt:
             break
 
-        interval = end - start
-        print(f'Elapsed time: {interval:.2f}', end=' ')
-        print(f'(per epoch: {interval/epochs:.2f})')
+    end = time()
+    interval = end - start
+    print(f'Elapsed time: {interval:.2f}', end=' ')
+    print(f'(per epoch: {interval/epochs:.2f})')
 
     history['train'][learning_rate] = train_history
     history['test'][learning_rate] = test_history
 
     if len(learning_rates) == 1:
         Ŷ_train, *mutated_vars = predict(variables, X_train)
-        Ŷ_train = Ŷ_train[..., None]
-
-        show_digits(X_train[..., 0],
-                    Y_train[..., 0],
-                    Ŷ_train[..., 0],
-                    xmax=1,
-                    ymax=nclasses)
-
-        show_digits(X_test[..., 0],
-                    Y_test[..., 0],
-                    Ŷ_test[..., 0],
-                    xmax=1,
-                    ymax=nclasses)
+        show_data(X_train, Y_train, Ŷ_train, xmax=1, ymin=-1, ymax=nclasses)
+        show_data(X_test, Y_test, Ŷ_test, xmax=1, ymin=-1, ymax=nclasses)
 
 # plotting results
 plt.style.use('dark_background')

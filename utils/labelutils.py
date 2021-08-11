@@ -9,7 +9,7 @@ import matplotlib as mpl
 from matplotlib import pyplot as plt
 from PIL import Image
 from os import listdir
-from os.path import join
+from os.path import join, splitext
 from .osutils import with_same_basename
 from .datautils import open_image
 
@@ -118,57 +118,17 @@ def gen_dataset(data_dir,
                 class_names,
                 show=False,
                 cut=-1,
-                open_data=open_image):
-    data_filenames = listdir(data_dir)
-    label_filenames = listdir(label_dir)
-
-    X, Y = [], []
-
-    for label_filename in label_filenames:
-        # name = splitext(label_filename)[0]
-
-        label_file = LabelFile.read(join(label_dir, label_filename))
-
-        data_filename = with_same_basename(label_filename, data_filenames)
-        data = open_data(join(data_dir, data_filename))
-
-        if cut > -1:
-            label_file, cut_idx = label_file.cut(cut)
-            data = data[cut_idx]
-            del cut_idx
-
-        x = data
-        y = -np.ones(label_file.img_shape)
-        for shape in label_file.shapes:
-            num_label = class_names.index(shape.label)
-            idx = shape.to_pixel_mask(label_file.img_shape)
-            y[idx] = num_label
-
-        X.append(x)
-        Y.append(y)
-
-        if show:
-            fig, axes = plt.subplots(1, 2, sharex=True, sharey=True)
-            axes[0].imshow(x)
-            axes[1].imshow(y)
-            plt.show()
-    return X, Y
-
-
-def gen_dataset(data_dir,
-                label_dir,
-                class_names,
-                show=False,
-                cut=-1,
                 open_data=open_image,
-                x_as_function=False):
+                x_as_function=False,
+                return_names=False):
     data_filenames = listdir(data_dir)
     label_filenames = listdir(label_dir)
 
-    X, Y = [], []
+    X, Y, names = [], [], []
 
     for label_filename in label_filenames:
-        # name = splitext(label_filename)[0]
+        name = splitext(label_filename)[0]
+        names.append(name)
 
         label_file = LabelFile.read(join(label_dir, label_filename))
 
@@ -198,7 +158,11 @@ def gen_dataset(data_dir,
             axes[0].imshow(x() if x_as_function else x)
             axes[1].imshow(y)
             plt.show()
-    return X, Y
+
+    if return_names:
+        return X, Y, names
+    else:
+        return X, Y
 
 
 def test_gen_dataset():
