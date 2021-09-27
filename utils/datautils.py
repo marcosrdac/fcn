@@ -2,7 +2,15 @@ from os import listdir
 from os.path import join, splitext, basename
 import matplotlib.pyplot as plt
 import numpy as np
+import netCDF4 as nc
 from PIL import Image
+Image.MAX_IMAGE_PIXELS = 933120000
+
+
+def open_nc_variable(path, var):
+    ncf = nc.Dataset(path)
+    img = ncf[var]
+    return img
 
 
 def open_image(path):

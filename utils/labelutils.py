@@ -10,12 +10,17 @@ from matplotlib import pyplot as plt
 from PIL import Image
 from os import listdir
 from os.path import join, splitext
-from .osutils import with_same_basename
-from .datautils import open_image
+try:
+    from .osutils import with_same_basename
+    from .datautils import open_image
+except ImportError:
+    from osutils import with_same_basename
+    from datautils import open_image
 
 
 @dataclass(frozen=True)
 class LabelFile:
+    '''Class used to operate LabelMe files.'''
     flags: dict
     shapes: list
     img_shape: tuple
@@ -98,13 +103,17 @@ class Shape:
     def __post_init__(self):
         object.__setattr__(self, 'points', np.asarray(self.points))
 
-    def to_pixel_mask(self, shape):
+    def to_pixel_mask(self, shape, coords=None, coord_dtype=np.uint16):
         h, w = shape
+        print(shape)
+        if coords is None:
+            # y, x = np.mgrid[:h, :w]
+            # coords = np.stack((x.ravel(), y.ravel()), axis=1)
+            idx2d = np.indices(shape, dtype=coord_dtype)
+            coords = np.stack(tuple(ax.ravel() for ax in idx2d[::-1]), axis=1)
         path = mpl.path.Path(self.points)
-        y, x = np.mgrid[:h, :w]
-        coords = np.stack((x.ravel(), y.ravel()), axis=1)
         mask = path.contains_points(coords).reshape(shape)
-        return mask
+        return mask, coords
 
 
 @dataclass(frozen=True)
@@ -120,6 +129,7 @@ def gen_dataset(data_dir,
                 cut=-1,
                 open_data=open_image,
                 x_as_function=False,
+                mask_dtype=np.int8,
                 return_names=False):
     data_filenames = listdir(data_dir)
     label_filenames = listdir(label_dir)
@@ -130,25 +140,38 @@ def gen_dataset(data_dir,
         name = splitext(label_filename)[0]
         names.append(name)
 
+        print('DELETE 1')
         label_file = LabelFile.read(join(label_dir, label_filename))
+        print('DELETE 2')
 
         if cut > -1:
             label_file, cut_idx = label_file.cut(cut)
+
+        print('DELETE 3')
 
         data_filename = with_same_basename(label_filename, data_filenames)
 
         def data_getter():
             data = open_data(join(data_dir, data_filename))
+            print('DELETE 4')
             if cut > -1:
                 data = data[cut_idx]
+            print('DELETE 5')
             return data
 
+        print('DELETE 6')
+
         x = data_getter if x_as_function else data_getter()
-        y = -np.ones(label_file.img_shape)
+        print('DELETE 7')
+        y = -np.ones(label_file.img_shape, dtype=mask_dtype)
+        print('DELETE 8')
+        coords = None
         for shape in label_file.shapes:
             num_label = class_names.index(shape.label)
-            idx = shape.to_pixel_mask(label_file.img_shape)
+            print('DELETE 9')
+            idx, coords = shape.to_pixel_mask(label_file.img_shape, coords)
             y[idx] = num_label
+            print('DELETE 10')
 
         X.append(x)
         Y.append(y)
@@ -181,12 +204,12 @@ def test_gen_dataset():
 
 def test_labelfile():
     label_paths = [
-        '/home/marcosrdac/los/img/teste0_S1B_IW_SLC__1SDV_20210120T080527_20210120T080554_025235_030137_BB07_Cal_Orb_deb_ML.json',
+        '/mnt/hdd/home/tmp/los/unet_training/label/S1A_IW_SLC__1SDV_20170810T024712_20170810T024738_017855_01DEF7_445E.json',
     ]
 
     for label_path in label_paths:
         label_file = LabelFile.read(label_path)
-        label_file, idx = label_file.cut()
+        # label_file, idx = label_file.cut()
 
         plt.imshow(label_file.img)
         for shape in label_file.shapes:
@@ -195,5 +218,23 @@ def test_labelfile():
 
 
 if __name__ == '__main__':
-    test_labelfile()
-    test_gen_dataset()
+    # test_labelfile()
+    # test_gen_dataset()
+
+    label_paths = [
+        '/mnt/hdd/home/tmp/los/unet_training/label/S1A_IW_SLC__1SDV_20170810T024712_20170810T024738_017855_01DEF7_445E.json',
+    ]
+
+    for label_path in label_paths:
+        label_file = LabelFile.read(label_path)
+        # label_file, idx = label_file.cut()
+
+        plt.imshow(label_file.img)
+        y = np.zeros(label_file.img_shape, dtype=np.int8)
+        for shape in label_file.shapes:
+            print(shape.to_pixel_mask(label_file.img_shape))
+            exit()
+            #plt.plot(*shape.points.T, marker='o')
+            pass
+        plt.imshow(y)
+        plt.show()
