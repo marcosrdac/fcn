@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Type, Callable, Sequence, Dict
 from dataclasses import dataclass
 from base64 import b64decode
 from copy import copy
@@ -25,7 +25,7 @@ class LabelFile:
     shapes: list
     img_shape: tuple
     img_path: str = ''
-    img: np.array = np.zeros(0)
+    img: np.array = None
     version: str = ''
     cut_idx: Any = None
 
@@ -37,18 +37,43 @@ class LabelFile:
         return f'{self.__class__.__name__}({data})'
 
     @staticmethod
-    def read(path: str):
+    def read(path: str, load_img=False):
+        '''
+        Create a LabelFile object from a JSON LabelMe output's path.
+        `load_img` tells us if we should open the image inside the JSON.
+        '''
         with open(path, 'r') as f:
             loaded = json.load(f)
+
         img_shape = loaded['imageHeight'], loaded['imageWidth']
         img_path = loaded['imagePath']
         version = loaded['version']
         flags = loaded['shapes']
         shapes = [Shape(**shape) for shape in loaded['shapes']]
-        img = LabelFile.get_img(loaded['imageData'])
+
+        if load_img:
+            img = LabelFile.load_img(loaded['imageData'])
+        else:
+            img = None
+
         return LabelFile(flags, shapes, img_shape, img_path, img, version)
 
+    def load_img(imgData):
+        '''
+        Method to load image data from inside JSON LabelMe output.
+        '''
+        try:
+            f = BytesIO()
+            f.write(b64decode(imgData))
+            return np.asarray(Image.open(f))
+        except TypeError:
+            return None
+
     def cut(self, extra=0):
+        '''
+        Cut data extents to get a new, small object. `extra` pads minimal
+        dimensions of the LabelFile.
+        '''
         assert extra >= 0
         h, w = self.img_shape
         x_min = y_min = np.inf
@@ -67,6 +92,7 @@ class LabelFile:
             y_min = np.max((y_min - extra, 0))
             x_max = np.min((x_max + extra, w))
             y_max = np.min((y_max + extra, h))
+        new_shape = y_max - y_min, x_max - x_min
 
         new = copy(self)
 
@@ -78,22 +104,18 @@ class LabelFile:
 
         if self.img is not None:
             object.__setattr__(new, 'img', new.img[cut_idx])
-            object.__setattr__(new, 'img_shape', new.img.shape[:2])
-            object.__setattr__(new, 'cut_idx', cut_idx)
+        object.__setattr__(new, 'img_shape', new_shape)
+        object.__setattr__(new, 'cut_idx', cut_idx)
 
         return new, cut_idx
-
-    def get_img(imgData):
-        try:
-            f = BytesIO()
-            f.write(b64decode(imgData))
-            return np.asarray(Image.open(f))
-        except TypeError:
-            return None
 
 
 @dataclass(frozen=True)
 class Shape:
+    '''
+    Class to operate on polygons and associated labels inside a LabelMe JSON
+    file.
+    '''
     label: str
     points: np.array
     shape_type: str
@@ -103,34 +125,105 @@ class Shape:
     def __post_init__(self):
         object.__setattr__(self, 'points', np.asarray(self.points))
 
-    def to_pixel_mask(self, shape, coords=None, coord_dtype=np.uint16):
-        h, w = shape
-        print(shape)
-        if coords is None:
-            # y, x = np.mgrid[:h, :w]
-            # coords = np.stack((x.ravel(), y.ravel()), axis=1)
-            idx2d = np.indices(shape, dtype=coord_dtype)
-            coords = np.stack(tuple(ax.ravel() for ax in idx2d[::-1]), axis=1)
-        path = mpl.path.Path(self.points)
-        mask = path.contains_points(coords).reshape(shape)
-        return mask, coords
+    def indices(self):
+        '''
+        Get indices of image array that are inside this shape's polygon.
+        '''
+        # LabelMe coords are (x,y), not (i,j)
+        poly = self.points[:, ::-1]
+
+        crd_min = np.floor(np.min(poly, axis=0)).astype(int)
+        crd_max = np.ceil(np.max(poly, axis=0)).astype(int)
+
+        win_size = crd_max - crd_min
+        win_idx = np.indices(win_size)
+        win_crds = np.column_stack([d.flat for d in win_idx])
+
+        crds = crd_min[None, :] + win_crds
+        del win_crds
+
+        path = mpl.path.Path(poly)
+        mask = path.contains_points(crds)
+        idx = tuple(crds[mask].T)
+        return idx
 
 
-@dataclass(frozen=True)
-class Label:
-    name: str
-    full_name: str = None
+class Classes:
+    '''
+    Class used to manage a set of classes associated with unique ids and sets 
+    of labels.
+    '''
+    ids: Dict[str, int]
+    descriptions: Dict[int, str]
+    names: Dict[int, list]
+    main_names: Dict[int, str]
+
+    def __init__(self):
+        self.ids = {}
+        self.descriptions = {}
+        self.names = {}
+        self.main_names = {}
+
+    def __len__(self):
+        return len(self.main_names)
+
+    def __repr__(self):
+        return str(self.main_names)
+
+    def create(self, description: str, names: Sequence):
+        '''
+        Create a label for the `Classes` instance. Names can be a string or a sequence of strings.
+        '''
+        id = len(self.main_names)
+
+        if isinstance(names, str):
+            main_name = names
+            names = [names]
+        else:
+            main_name = names[0]
+            names = [*names]
+
+        for name in names:
+            self.ids[name] = id
+        self.main_names[id] = main_name
+        self.names[id] = names
+        self.descriptions[id] = description
+
+    def remove(self, id, keepids=True):
+        '''
+        Remove a label from this `Classes` instance. If `keepids` is `false`,
+        rearrange ids so that they are uniform again.
+        '''
+        for name in self.names[id]:
+            del self.ids[name]
+        del self.names[id]
+        del self.main_names[id]
+        del self.descriptions[id]
+        if not keepids:
+            for new_id in range(id, len(self) - 1):
+                old_id = new_id + 1
+
+                self.names[new_id] = self.names[old_id]
+                self.main_names[new_id] = self.main_names[old_id]
+                self.descriptions[new_id] = self.descriptions[old_id]
+        self.ids = {n: (i if i < id else i - 1) for n, i in self.ids.items()}
 
 
-def gen_dataset(data_dir,
-                label_dir,
-                class_names,
-                show=False,
-                cut=-1,
-                open_data=open_image,
-                x_as_function=False,
-                mask_dtype=np.int8,
-                return_names=False):
+def gen_dataset(data_dir: str,
+                label_dir: str,
+                label_to_id: Callable,
+                show: bool = False,
+                cut: int = -1,
+                data_opener: Callable = open_image,
+                x_as_function: Callable = False,
+                mask_dtype: Type = np.int8,
+                return_names: bool = False):
+    '''
+    Generates dataset from original files, LabelMe files and a function that 
+    maps label names to class ids. `cut` = -1 means that we do not want to cut
+    the to only the useful parts.
+    '''
+
     data_filenames = listdir(data_dir)
     label_filenames = listdir(label_dir)
 
@@ -140,45 +233,34 @@ def gen_dataset(data_dir,
         name = splitext(label_filename)[0]
         names.append(name)
 
-        print('DELETE 1')
         label_file = LabelFile.read(join(label_dir, label_filename))
-        print('DELETE 2')
 
         if cut > -1:
             label_file, cut_idx = label_file.cut(cut)
 
-        print('DELETE 3')
-
         data_filename = with_same_basename(label_filename, data_filenames)
 
         def data_getter():
-            data = open_data(join(data_dir, data_filename))
-            print('DELETE 4')
+            data = data_opener(join(data_dir, data_filename))
             if cut > -1:
                 data = data[cut_idx]
-            print('DELETE 5')
             return data
 
-        print('DELETE 6')
-
         x = data_getter if x_as_function else data_getter()
-        print('DELETE 7')
         y = -np.ones(label_file.img_shape, dtype=mask_dtype)
-        print('DELETE 8')
-        coords = None
         for shape in label_file.shapes:
-            num_label = class_names.index(shape.label)
-            print('DELETE 9')
-            idx, coords = shape.to_pixel_mask(label_file.img_shape, coords)
-            y[idx] = num_label
-            print('DELETE 10')
+            num_label = label_to_id(shape.label)
+            if num_label is not None:
+                y[shape.indices()] = num_label
+            else:
+                print(f'WARNING: not using undescribed label {shape.label!r}')
 
         X.append(x)
         Y.append(y)
 
         if show:
             fig, axes = plt.subplots(1, 2, sharex=True, sharey=True)
-            axes[0].imshow(x() if x_as_function else x)
+            axes[0].imshow(x() if x_as_function else x, cmap='gray')
             axes[1].imshow(y)
             plt.show()
 
@@ -192,49 +274,37 @@ def test_gen_dataset():
     DATA = '/home/marcosrdac/tmp/los/unet_training'
     IMAGE_DIR = join(DATA, 'image')
     LABEL_DIR = join(DATA, 'label')
-    CLASS_NAMES = ['sea', 'fish', 'plant']
+    classes = Classes()
+    classes.create('Oil spill label', ['oil', 'oil spill'])
+    classes.create('Ocean label', ['ocean', 'sea'])
 
     X, Y = gen_dataset(IMAGE_DIR,
                        LABEL_DIR,
-                       CLASS_NAMES,
+                       classes.ids.get,
                        show=True,
                        cut=0,
                        x_as_function=True)
 
 
-def test_labelfile():
+def test_labelfile(cut=False):
     label_paths = [
-        '/mnt/hdd/home/tmp/los/unet_training/label/S1A_IW_SLC__1SDV_20170810T024712_20170810T024738_017855_01DEF7_445E.json',
+        '/home/marcosrdac/tmp/los/unet_training/label/S1A_IW_SLC__1SDV_20170810T024712_20170810T024738_017855_01DEF7_445E.json',
     ]
 
     for label_path in label_paths:
-        label_file = LabelFile.read(label_path)
-        # label_file, idx = label_file.cut()
+        label_file = LabelFile.read(label_path, load_img=False)
+        if cut:
+            label_file, idx = label_file.cut()
 
-        plt.imshow(label_file.img)
-        for shape in label_file.shapes:
+        y = np.zeros(label_file.img_shape, dtype=np.int8)
+        for s, shape in enumerate(label_file.shapes, start=1):
             plt.plot(*shape.points.T, marker='o')
+            idx = shape.indices()
+            y[idx] = s
+        plt.imshow(y)
         plt.show()
 
 
 if __name__ == '__main__':
-    # test_labelfile()
-    # test_gen_dataset()
-
-    label_paths = [
-        '/mnt/hdd/home/tmp/los/unet_training/label/S1A_IW_SLC__1SDV_20170810T024712_20170810T024738_017855_01DEF7_445E.json',
-    ]
-
-    for label_path in label_paths:
-        label_file = LabelFile.read(label_path)
-        # label_file, idx = label_file.cut()
-
-        plt.imshow(label_file.img)
-        y = np.zeros(label_file.img_shape, dtype=np.int8)
-        for shape in label_file.shapes:
-            print(shape.to_pixel_mask(label_file.img_shape))
-            exit()
-            #plt.plot(*shape.points.T, marker='o')
-            pass
-        plt.imshow(y)
-        plt.show()
+    test_labelfile()
+    test_gen_dataset()

@@ -10,12 +10,14 @@ from jax.flatten_util import ravel_pytree
 from flax import optim
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
-from unet import BatchFCN
+from fcn.fcn import BatchFCN
 from config import INPUT_DIR, OUTPUT_DIR, IMAGE_DIR, LABEL_DIR, CLASSES, X_DIR, Y_DIR
 from utils.labelutils import gen_dataset
 from utils.datautils import open_all_patched
 from utils.plotutils import show_data
 from os import environ
+import pickle
+from jax.experimental import optimizers
 
 environ['XLA_PYTHON_CLIENT_ALLOCATOR'] = 'platform'
 
