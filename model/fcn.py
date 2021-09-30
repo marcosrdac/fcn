@@ -211,7 +211,7 @@ if __name__ == '__main__':
     #     drop=.2,
     # )
 
-    # example w-net definition
+    # example double u-net definition
     model = BatchFCN(rescale=(-2, 0, 2, 0, -2, 0, 2),
                      nfeat=(8, ),
                      activation=nn.relu,

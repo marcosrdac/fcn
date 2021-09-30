@@ -59,18 +59,58 @@ open_data = partial(open_nc_variable, var='Sigma0_VV_db')
 mask_dtype = np.int8  # cannot be unsigned!
 
 # Train data patch settings
+PATCH_CONFIG = {}
 # - Modify these parameters
 patch_size = 64
-overlap_ratio = False  # False or ratio
-PATCH_CONFIG = {
-    'shape': (patch_size, patch_size),
-    'overlap': (overlap_ratio, overlap_ratio) if overlap_ratio else False,
-    'ignore_border': 5 / 100,
-}
+overlap = False  # False or ratio
+ignore_border = 5 / 100
+PATCH_CONFIG['shape'] = (patch_size, patch_size),
+PATCH_CONFIG['overlap'] = (overlap, overlap) if overlap else False
+PATCH_CONFIG['ignore_border'] = ignore_border
+
+# Train config
+TRAIN_CONFIG = {}
+# - Independent labels to also keep track of metrics
+TRAIN_CONFIG['keep_labels'] = ()
 
 # Model settings
+UNET_CONFIG = {}
+# - rngkeys
+UNET_CONFIG['rngkeys']['init'] = 0
+UNET_CONFIG['rngkeys']['drop_init'] = 1
+UNET_CONFIG['rngkeys']['drop_apply'] = 2
+UNET_CONFIG['rngkeys']['train'] = 3
 # - U-net architectures
-# ...
+UNET_CONFIG['architectures'] = {
+    'model_a':
+    dict(
+        rescale=(-2, -2, 0, 2, 2),
+        nfeat=(
+            (8, ),
+            (16, ),
+            (32, ),
+            (16, ),
+            (8, ),
+        ),
+        norm=True,
+        # drop=(),
+        droplast=.3),
+    #'b': 
+    #dict(
+    #    rescale=(-2, -2, 0, 2, 2),
+    #    nfeat=(
+    #        (8, ),
+    #        (16, ),
+    #        (32, ),
+    #        (16, ),
+    #        (8, ),
+    #    ),
+    #    norm=True,
+    #    # drop=(),
+    #    droplast=.3),
+}
+ 
+
 
 if __name__ == '__main__':
     from os import listdir
@@ -91,6 +131,8 @@ if __name__ == '__main__':
     print()
     print(
         'Patch settings:',
-        *dump(PATCH_CONFIG, default_flow_style=False).splitlines(),
-        # PATCH_CONFIG,
-        sep='\n- ')
+        # *dump(PATCH_CONFIG, default_flow_style=False).splitlines(),
+        PATCH_CONFIG,
+        sep='\n  ')
+    print()
+    print('U-net configurations', UNET_CONFIG, sep='\n  ')
