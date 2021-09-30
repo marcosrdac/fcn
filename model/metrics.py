@@ -4,16 +4,16 @@ import numpy as np
 from jax import numpy as jnp, lax
 
 
-def xentropy(logits, labels):
-    '''Cross-entropy between logits and labels.'''
-    return -jnp.sum(logits * labels, axis=-1)
-
-
 def onehot(labels, nclasses):
     '''One-hot encoder. Example transform: [2] -> [0, 0, 1].'''
     classes = jnp.arange(nclasses)
     logits = labels[..., None] == classes[None, None, None, :]
     return logits.astype(jnp.float32)
+
+
+def xentropy(logits, labels):
+    '''Cross-entropy between logits and labels.'''
+    return -jnp.sum(logits * labels, axis=-1)
 
 
 def xentropy_loss(ŷ_logits, y, nclasses, idx=None):
@@ -23,11 +23,6 @@ def xentropy_loss(ŷ_logits, y, nclasses, idx=None):
     '''
     labels = onehot(y, nclasses)
     return jnp.mean(xentropy(ŷ_logits[idx], labels[idx]))
-
-
-def accuracy(ŷ, y):
-    '''Accuracy metric.'''
-    return jnp.mean(ŷ == y)
 
 
 def get_conf_matrix(ŷ, y, y_masks):
@@ -108,20 +103,20 @@ def get_main_metrics_for_label(conf_matrix, label):
     return metrics
 
 
-def get_main_metrics(conf_matrix, keep_labels=()):
+def get_main_metrics(conf_matrix, keep_labels):
     metrics = {}
     nclasses = conf_matrix.shape[0]
     for label in range(nclasses):
         label_metrics = get_main_metrics_for_label(conf_matrix, label)
         for m, val in label_metrics.items():
             metrics[m] = val / nclasses + metrics.get(m, 0.)
-            if label in keep_labels:
-                label_m = f'label {label} {m}'
+            if keep_labels[label]:
+                label_m = f'label {label}\'s {m}'
                 metrics[label_m] = val
     return metrics
 
 
-def eval_metrics(Ŷ, Y, Y_masks, keep_labels=(), **other_metrics):
+def eval_metrics(Ŷ, Y, Y_masks, keep_labels, **other_metrics):
     '''
     Evaluate metrics of a model.
     '''
@@ -161,14 +156,16 @@ if __name__ == '__main__':
     y_masks = [(y == c).nonzero() for c in range(nclasses)]
     y_joined_masks = tuple(jnp.concatenate(i) for i in zip(*y_masks))
 
-    #print(y_masks)
-    #print(len(y_masks))
-    #print(len(y_masks[0]))
+    # print(y_masks)
+    # print(len(y_masks))
+    # print(len(y_masks[0]))
     print(y.at[y_joined_masks].set(9))
     # print(y_joined_masks)
 
     conf_matrix = get_conf_matrix(ŷ, y, y_masks)
-    metrics = eval_metrics(ŷ, y, y_masks, label=None, loss=3)
+    # keep_labels = [False, False, True]
+    keep_labels = [i == c for c in range(nclasses) for i in [1]]
+    metrics = eval_metrics(ŷ, y, y_masks, keep_labels=keep_labels, loss=3)
 
     print(conf_matrix)
     print(metrics)

@@ -49,7 +49,7 @@ TEST_CLASSES.create('Sea', ['sea'])
 TEST_CLASSES.create('Fish', ['fish'])
 TEST_CLASSES.create('Plant', ['plant'])
 # - Class set definition
-CLASSES = OIL_CLASSES
+CLASSES = OCEAN_CLASSES
 
 # Input data opener
 # open_data = open_image  # usual
@@ -63,23 +63,32 @@ PATCH_CONFIG = {}
 # - Modify these parameters
 patch_size = 64
 overlap = False  # False or ratio
-ignore_border = 5 / 100
 PATCH_CONFIG['shape'] = (patch_size, patch_size),
 PATCH_CONFIG['overlap'] = (overlap, overlap) if overlap else False
-PATCH_CONFIG['ignore_border'] = ignore_border
+PATCH_CONFIG['ignore_border'] = 5 / 100
 
 # Train config
 TRAIN_CONFIG = {}
 # - Independent labels to also keep track of metrics
-TRAIN_CONFIG['keep_labels'] = ()
+TRAIN_CONFIG['keep_label_info'] = [0,]
+TRAIN_CONFIG['batch_size'] = 20  # int or None
+TRAIN_CONFIG['max_epochs'] = 2  # 50
+TRAIN_CONFIG['test_size'] = 1 / 3
+# TRAIN_CONFIG['learning_rates'] = 10**np.linspace(-1, 2, 8)
+# TRAIN_CONFIG['learning_rates'] = 1e-3, 1e-2, 1e-1,
+TRAIN_CONFIG['learning_rates'] = 2e-2,
+
+# - rngkeys
+TRAIN_CONFIG['rngkeys'] = {}
+TRAIN_CONFIG['rngkeys']['train'] = 0
 
 # Model settings
 UNET_CONFIG = {}
 # - rngkeys
-UNET_CONFIG['rngkeys']['init'] = 0
-UNET_CONFIG['rngkeys']['drop_init'] = 1
-UNET_CONFIG['rngkeys']['drop_apply'] = 2
-UNET_CONFIG['rngkeys']['train'] = 3
+UNET_CONFIG['rngkeys'] = {}
+UNET_CONFIG['rngkeys']['init'] = 1
+UNET_CONFIG['rngkeys']['drop_init'] = 2
+UNET_CONFIG['rngkeys']['drop_apply'] = 3
 # - U-net architectures
 UNET_CONFIG['architectures'] = {
     'model_a':
@@ -95,8 +104,8 @@ UNET_CONFIG['architectures'] = {
         norm=True,
         # drop=(),
         droplast=.3),
-    #'b': 
-    #dict(
+    # 'b':
+    # dict(
     #    rescale=(-2, -2, 0, 2, 2),
     #    nfeat=(
     #        (8, ),
@@ -109,8 +118,6 @@ UNET_CONFIG['architectures'] = {
     #    # drop=(),
     #    droplast=.3),
 }
- 
-
 
 if __name__ == '__main__':
     from os import listdir
@@ -125,7 +132,7 @@ if __name__ == '__main__':
               f'(with {num_files} files)',
               sep=' ')
     print()
-    print('Classes defined:',
+    print(f'Classes defined ({len(CLASSES)}):',
           *dump(CLASSES.descriptions, default_flow_style=False).splitlines(),
           sep='\n- ')
     print()

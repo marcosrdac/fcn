@@ -53,7 +53,7 @@ def multiply_pytree(tree, coeficient):
     return unravel(coeficient * tree_flat)
 
 
-def make_calc_grad(predict, loss_function, nclasses):
+def make_calc_grad(predict, loss_function, nclasses, keep_labels):
     @jit
     def calc_grad(variables, X, Y, Y_masks, Y_joined_masks):
         '''Train model with batched data.'''
@@ -67,7 +67,7 @@ def make_calc_grad(predict, loss_function, nclasses):
         (loss, (Ŷ_logits, *mutated_vars)), lossgrad = lossgrad_fun(variables)
 
         Ŷ = jnp.argmax(Ŷ_logits, -1)[..., None]
-        metrics = eval_metrics(Ŷ, Y, Y_masks, loss=loss)
+        metrics = eval_metrics(Ŷ, Y, Y_masks, keep_labels, loss=loss)
 
         return lossgrad, metrics
 
@@ -121,9 +121,9 @@ def make_train_epoch(calc_grad, nclasses):
     return train_epoch
 
 
-def make_eval_epoch(predict, loss_function, nclasses):
+def make_eval_epoch(predict, loss_function, nclasses, keep_labels):
     @jit
-    def eval_epoch(variables, X, Y, Y_masks, Y_joined_masks, keep_labels=()):
+    def eval_epoch(variables, X, Y, Y_masks, Y_joined_masks):
         Ŷ_logits, *_ = predict(variables, X, proba=True)
         loss = loss_function(Ŷ_logits, Y, nclasses, Y_joined_masks)
 

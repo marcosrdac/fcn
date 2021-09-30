@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 
 from os import environ
-from functools import partial
 from time import time
 import numpy as np
 import jax
 from jax import random, numpy as jnp
-from jax import jit, value_and_grad
-from jax.experimental import optimizers
 from flax import optim
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
@@ -15,28 +12,35 @@ from model.train import build_batch_fcn
 from model.train import make_calc_grad, make_train_epoch, make_eval_epoch
 from model.metrics import xentropy_loss
 from train_config import DATA_DIRS, CLASSES, UNET_CONFIG, TRAIN_CONFIG
-from utils.labelutils import gen_dataset
 from utils.datautils import open_all_patched
 from utils.plotutils import show_data
 from utils.abcutils import AccumulatingDict
-import pickle
+# import pickle
 
 environ['XLA_PYTHON_CLIENT_ALLOCATOR'] = 'platform'
-train_rng = random.PRNGKey(UNET_CONFIG['rngkeys']['train'])
+plt.style.use('dark_background')
+train_rng = random.PRNGKey(TRAIN_CONFIG['rngkeys']['train'])
 
-# getting data
+# Getting data
+until = 60  # change to None
 nclasses = len(CLASSES)
 X, Y = open_all_patched(DATA_DIRS['X'], DATA_DIRS['Y'])
-# X, Y = np.concatenate(X), np.concatenate(Y)
-X, Y = np.concatenate([*X, *X]), np.concatenate([*Y, *Y])
-until = 30
+X, Y = np.concatenate(X), np.concatenate(Y)
 X, Y = X[:until], Y[:until]
 
-# hold-out validation setup
-X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=1 / 3)
+# Hold-out validation setup
+X_train, X_test, Y_train, Y_test = train_test_split(
+    X,
+    Y,
+    test_size=TRAIN_CONFIG['test_size'],
+)
 
+keep_labels = np.zeros(len(CLASSES), dtype=bool)
+keep_labels[TRAIN_CONFIG['keep_label_info']] = True
+
+# Training U-net architectures
 for arch_name, fcn_params in UNET_CONFIG['architectures'].items():
-    variables, model, predict = build_batch_fcn(
+    init_variables, model, predict = build_batch_fcn(
         **fcn_params,
         mode='classifier',
         nout=nclasses,
@@ -45,33 +49,32 @@ for arch_name, fcn_params in UNET_CONFIG['architectures'].items():
         drop_init_rngkey=UNET_CONFIG['rngkeys']['drop_init'],
         drop_apply_rngkey=UNET_CONFIG['rngkeys']['drop_apply'],
     )
-    calc_grad = make_calc_grad(predict, xentropy_loss, nclasses)
-    eval_epoch = make_eval_epoch(predict, xentropy_loss, nclasses)
+    calc_grad = make_calc_grad(predict, xentropy_loss, nclasses, keep_labels)
+    eval_epoch = make_eval_epoch(predict, xentropy_loss, nclasses, keep_labels)
     train_epoch = make_train_epoch(calc_grad, nclasses)
 
-    # setting histories up
-    history = {'train': {}, 'test': {}}
+    # printing net variables
+    print(jax.tree_map(jnp.shape, init_variables))
 
-    # setting initial weights for every test
-    print(jax.tree_map(jnp.shape, variables))
-    init_variables = variables
+    # setting up histories
+    histories = {}
 
-    # training
-    epochs = 50
-    # learning_rates = 10**np.linspace(-1, 2, 8)
-    # learning_rates = 1e-3, 1e-2, 1e-1,
-    learning_rates = 2e-2,
-    batch_size = 20
+    # train options
+    epochs = TRAIN_CONFIG['max_epochs']
+    learning_rates = TRAIN_CONFIG['learning_rates']
+    batch_size = TRAIN_CONFIG['batch_size']
 
     for learning_rate in learning_rates:
+        # tracking train and test metrics
+        histories[learning_rate] = {
+            'train': AccumulatingDict(),
+            'test': AccumulatingDict(),
+        }
+
         # defining optimizer
         optimizer_method = optim.Adam(learning_rate=learning_rate)
         variables = {'params': init_variables['params']}
         optimizer = optimizer_method.create(variables)
-
-        # tracking train and test metrics
-        train_history = []
-        test_history = []
 
         # training loop
         start = time()
@@ -96,16 +99,15 @@ for arch_name, fcn_params in UNET_CONFIG['architectures'].items():
                            for c in range(nclasses)]
                 Y_joined_masks = (
                     *[jnp.concatenate(Y_c) for Y_c in zip(*Y_masks)], )
-                Ŷ_test, test_metrics = eval_epoch(
-                    variables,
-                    X_test_cut,
-                    Y_test_cut,
-                    Y_masks,
-                    Y_joined_masks,
-                    keep_labels=TRAIN_CONFIG['keep_labels'])
 
-                train_history.append(train_metrics)
-                test_history.append(test_metrics)
+                Ŷ_test, test_metrics = eval_epoch(variables,
+                                                  X_test_cut,
+                                                  Y_test_cut,
+                                                  Y_masks,
+                                                  Y_joined_masks)
+
+                histories[learning_rate]['train'].append(train_metrics)
+                histories[learning_rate]['test'].append(test_metrics)
 
                 # print to screen
                 print(f'{epoch}', end=' ')
@@ -121,13 +123,11 @@ for arch_name, fcn_params in UNET_CONFIG['architectures'].items():
         end = time()
         interval = end - start
         print(f'Elapsed time: {interval:.2f}', end=' ')
-        print(f'(per epoch: {interval/epochs:.2f})')
+        print(f'(per epoch: {interval/epoch:.2f})')
 
-        history['train'][learning_rate] = train_history
-        history['test'][learning_rate] = test_history
+        # Plotting results
 
-        print(jax.tree_map(jnp.shape, variables))
-
+        # TODO save plots for all learning ratios
         if len(learning_rates) == 1:
             Ŷ_train, *mutated_vars = predict(variables, X_train)
             show_data(X_train,
@@ -139,29 +139,33 @@ for arch_name, fcn_params in UNET_CONFIG['architectures'].items():
             Ŷ_test, *mutated_vars = predict(variables, X_test)
             show_data(X_test, Y_test, Ŷ_test, xmax=1, ymin=-1, ymax=nclasses)
 
-    # plotting results
-    plt.style.use('dark_background')
-    metrics = [*history['train'][learning_rates[0]][0]]
+    # Plot histories
+    metrics = [*histories[learning_rates[0]]['train']]
     if 'loss' in metrics:
         metrics.remove('loss')
-        metrics = ['loss'] + metrics
+        metrics = ['loss', *metrics]
     nmetrics = len(metrics)
+
     fig, axes = plt.subplots(nmetrics, 2, sharex=True, sharey='row')
 
+    # TODO save plots
+    # TODO plot only chosen variables for specific classes (CONFIG)
     for part in ('train', 'test'):
         col = 0 if part == 'train' else 1
         axes[0, col].set_title(part.capitalize())
-        for lr, hist in history[part].items():
-            hist_metrics = {m: [t[m] for t in hist] for m in metrics}
+        for lr, hists in histories.items():
+            hist = hists[part]
 
-            for row, (m, vals) in enumerate(hist_metrics.items()):
+            for row, m in enumerate(metrics):
+                vals = hist[m]
+
                 ax = axes[row, col]
+                e = np.arange(1, 1 + len(vals))
+                ax.plot(e, vals, label=f'lr={lr}')
+                ax.set_ylabel(m.capitalize())
+
                 if m == 'loss':
                     ax.set_yscale('log')
-
-                x = np.arange(1, 1 + len(vals))
-                ax.plot(x, vals, label=f'lr={lr}')
-                ax.set_ylabel(m.capitalize())
 
     for ax in axes.ravel():
         ax.legend()
