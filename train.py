@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
-from os import environ
+from os import environ, makedirs
+from datetime import datetime
 from time import time
+import pickle
 import numpy as np
 import jax
 from jax import random, numpy as jnp
@@ -15,7 +17,9 @@ from train_config import DATA_DIRS, CLASSES, UNET_CONFIG, TRAIN_CONFIG
 from utils.datautils import open_all_patched
 from utils.plotutils import show_data
 from utils.abcutils import AccumulatingDict
-# import pickle
+from utils.pretty import pprint
+
+NOW = datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f")
 
 environ['XLA_PYTHON_CLIENT_ALLOCATOR'] = 'platform'
 plt.style.use('dark_background')
@@ -39,7 +43,12 @@ keep_labels = np.zeros(len(CLASSES), dtype=bool)
 keep_labels[TRAIN_CONFIG['keep_label_info']] = True
 
 # Training U-net architectures
-for arch_name, fcn_params in UNET_CONFIG['architectures'].items():
+for model_name, fcn_params in UNET_CONFIG['models'].items():
+
+    result_dirs = {**DATA_DIRS['result_dirs'](NOW, model_name)}
+    for dir_nick, dir_path in result_dirs:
+        makedirs(dir_path)
+
     init_variables, model, predict = build_batch_fcn(
         **fcn_params,
         mode='classifier',
@@ -77,7 +86,7 @@ for arch_name, fcn_params in UNET_CONFIG['architectures'].items():
         optimizer = optimizer_method.create(variables)
 
         # training loop
-        start = time()
+        time_train = [time()]
         for epoch in range(1, epochs + 1):
             try:
                 train_rng, epoch_rng = random.split(train_rng)
@@ -100,10 +109,8 @@ for arch_name, fcn_params in UNET_CONFIG['architectures'].items():
                 Y_joined_masks = (
                     *[jnp.concatenate(Y_c) for Y_c in zip(*Y_masks)], )
 
-                Ŷ_test, test_metrics = eval_epoch(variables,
-                                                  X_test_cut,
-                                                  Y_test_cut,
-                                                  Y_masks,
+                Ŷ_test, test_metrics = eval_epoch(variables, X_test_cut,
+                                                  Y_test_cut, Y_masks,
                                                   Y_joined_masks)
 
                 histories[learning_rate]['train'].append(train_metrics)
@@ -120,14 +127,14 @@ for arch_name, fcn_params in UNET_CONFIG['architectures'].items():
             except KeyboardInterrupt:
                 break
 
-        end = time()
-        interval = end - start
+        time_train.append(time())
+        interval = time_train.pop() - time_train.pop()
         print(f'Elapsed time: {interval:.2f}', end=' ')
         print(f'(per epoch: {interval/epoch:.2f})')
 
         # Plotting results
 
-        # TODO save plots for all learning ratios
+        # TODO save plots for all learning rates
         if len(learning_rates) == 1:
             Ŷ_train, *mutated_vars = predict(variables, X_train)
             show_data(X_train,
@@ -149,6 +156,7 @@ for arch_name, fcn_params in UNET_CONFIG['architectures'].items():
     fig, axes = plt.subplots(nmetrics, 2, sharex=True, sharey='row')
 
     # TODO save plots
+    # TODO see if we are using metrics calculated at each gradient step... else optimize it!
     # TODO plot only chosen variables for specific classes (CONFIG)
     for part in ('train', 'test'):
         col = 0 if part == 'train' else 1

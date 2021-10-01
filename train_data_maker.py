@@ -45,11 +45,11 @@ if dirs_with_data:
                 filepaths = [join(dir_path, f) for f in listdir(dir_path)]
                 for path in filepaths:
                     remove(path)
-                print(f'Done!')
+                print('Done!')
 
         elif procedure.startswith('b'):
             answered = True
-            print(f'Making backups for old output files:')
+            print('Making backups for old output files:')
             prefix = datetime.now().strftime('%Y%m%d%H%M%S%f_bkp_')
             for dir_nick in dirs_with_data:
                 dir_path = DATA_DIRS[dir_nick]
@@ -114,8 +114,7 @@ for output_filename in output_filenames:
     np.savez_compressed(x_path, x_patches)
     np.savez_compressed(y_path, y_patches)
 
-    print(f'- Patched {name!r} to:',
-          f'  - inputs: {x_path!r}',
+    print(f'- Patched {name!r} to:', f'  - inputs: {x_path!r}',
           f'  - outputs: {y_path!r}')
 
 inputs_not_matched = [

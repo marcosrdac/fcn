@@ -155,12 +155,14 @@ class Classes:
     '''
     ids: Dict[str, int]
     descriptions: Dict[int, str]
+    colors: Dict[int, Any]
     names: Dict[int, list]
     main_names: Dict[int, str]
 
     def __init__(self):
         self.ids = {}
         self.descriptions = {}
+        self.colors = {}
         self.names = {}
         self.main_names = {}
 
@@ -170,7 +172,7 @@ class Classes:
     def __repr__(self):
         return str(self.main_names)
 
-    def create(self, description: str, names: Sequence):
+    def create(self, description: str, names: Sequence, color=None):
         '''
         Create a label for the `Classes` instance. Names can be a string or a sequence of strings.
         '''
@@ -183,11 +185,15 @@ class Classes:
             main_name = names[0]
             names = [*names]
 
+        if color is None:
+            color = np.random.random(3)
+
         for name in names:
             self.ids[name] = id
+        self.descriptions[id] = description
         self.main_names[id] = main_name
         self.names[id] = names
-        self.descriptions[id] = description
+        self.colors[id] = color
 
     def remove(self, id, keepids=True):
         '''
@@ -196,17 +202,22 @@ class Classes:
         '''
         for name in self.names[id]:
             del self.ids[name]
-        del self.names[id]
-        del self.main_names[id]
         del self.descriptions[id]
+        del self.main_names[id]
+        del self.names[id]
+        del self.colors[id]
         if not keepids:
-            for new_id in range(id, len(self) - 1):
+            for new_id in range(id, len(self)):
                 old_id = new_id + 1
-
-                self.names[new_id] = self.names[old_id]
-                self.main_names[new_id] = self.main_names[old_id]
                 self.descriptions[new_id] = self.descriptions[old_id]
-        self.ids = {n: (i if i < id else i - 1) for n, i in self.ids.items()}
+                self.main_names[new_id] = self.main_names[old_id]
+                self.names[new_id] = self.names[old_id]
+                self.colors[new_id] = self.colors[old_id]
+            self.ids = {
+                n: (i if i < id else i - 1)
+                for n, i in self.ids.items()
+            }
+            self.remove(len(self)-1, keepids=True)
 
 
 def gen_dataset(data_dir: str,
