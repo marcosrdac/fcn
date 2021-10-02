@@ -126,11 +126,10 @@ TRAIN_CONFIG['rngkeys']['train'] = 3
 # WARNING: don't mess here unless you know what you are doing
 # - Result directories generators
 DATA_DIRS['result_dirs'] = lambda *d: {  # i.e. model_name, train_id
-    'checkpoints': join(DATA_DIRS['result'], *d[:2], 'checkpoints'),
+    'checkpoint': join(DATA_DIRS['result'], *d[:2], 'checkpoint'),
     'history_data': join(DATA_DIRS['result'], *d[:2], 'history_data'),
-    'history_plots': join(DATA_DIRS['result'], *d[:2], 'plots', 'history'),
-    'train_plots': join(DATA_DIRS['result'], *d[:2], 'plots', 'train'),
-    'test_plots': join(DATA_DIRS['result'], *d[:2], 'plots', 'test'),
+    'history_plot': join(DATA_DIRS['result'], *d[:2], 'plots', 'history'),
+    'patch_plot': join(DATA_DIRS['result'], *d[:2], 'plots', 'patch'),
 }
 
 if __name__ == '__main__':

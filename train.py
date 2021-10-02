@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
-from os import environ, makedirs
+from os import environ, mkdir, makedirs
+from os.path import join
 from datetime import datetime
 from time import time
 import pickle
@@ -18,6 +19,7 @@ from utils.datautils import open_all_patched
 from utils.plotutils import plot_patches
 from utils.abcutils import AccumulatingDict
 from utils.pretty import pprint
+from flax.training.checkpoints import save_checkpoint
 
 NOW = datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f")
 
@@ -46,7 +48,7 @@ keep_labels[TRAIN_CONFIG['keep_label_info']] = True
 for model_name, fcn_params in UNET_CONFIG['models'].items():
 
     result_dirs = {**DATA_DIRS['result_dirs'](NOW, model_name)}
-    for dir_nick, dir_path in result_dirs:
+    for dir_nick, dir_path in result_dirs.items():
         makedirs(dir_path)
 
     init_variables, model, predict = build_batch_fcn(
@@ -73,15 +75,19 @@ for model_name, fcn_params in UNET_CONFIG['models'].items():
     learning_rates = TRAIN_CONFIG['learning_rates']
     batch_size = TRAIN_CONFIG['batch_size']
 
-    for learning_rate in learning_rates:
+    for lr in learning_rates:
         # tracking train and test metrics
-        histories[learning_rate] = {
+        histories[lr] = {
             'train': AccumulatingDict(),
             'test': AccumulatingDict(),
         }
 
+        # saving model
+        checkpoints_dir = join(result_dirs['checkpoint'], f'lr={lr}')
+        mkdir(checkpoints_dir)
+
         # defining optimizer
-        optimizer_method = optim.Adam(learning_rate=learning_rate)
+        optimizer_method = optim.Adam(learning_rate=lr)
         variables = {'params': init_variables['params']}
         optimizer = optimizer_method.create(variables)
 
@@ -113,8 +119,8 @@ for model_name, fcn_params in UNET_CONFIG['models'].items():
                                                   Y_test_cut, Y_masks,
                                                   Y_joined_masks)
 
-                histories[learning_rate]['train'].append(train_metrics)
-                histories[learning_rate]['test'].append(test_metrics)
+                histories[lr]['train'].append(train_metrics)
+                histories[lr]['test'].append(test_metrics)
 
                 # print to screen
                 print(f'{epoch}', end=' ')
@@ -124,6 +130,13 @@ for model_name, fcn_params in UNET_CONFIG['models'].items():
                       sep=' | ',
                       end='\n')
 
+                save_checkpoint(checkpoints_dir,
+                                variables,
+                                step=epoch,
+                                prefix='e=',
+                                keep=1000,
+                                overwrite=False)
+
             except KeyboardInterrupt:
                 break
 
@@ -132,22 +145,33 @@ for model_name, fcn_params in UNET_CONFIG['models'].items():
         print(f'Elapsed time: {interval:.2f}', end=' ')
         print(f'(per epoch: {interval/epoch:.2f})')
 
-        # Plotting results
+        name = f'lr={lr}_e={epoch}'
 
+        # Plotting results
         Ŷ_train, *mutated_vars = predict(variables, X_train)
+        train_fig_path = join(result_dirs['patch_plot'], f'train_{name}.png')
         plot_patches(X=X_train,
                      Y=Y_train,
                      Ŷ=Ŷ_train,
                      ymin=-1,
                      ymax=nclasses,
-                     classes=CLASSES)
+                     classes=CLASSES,
+                     figname=train_fig_path,
+                     dpi=300)
         Ŷ_test, *mutated_vars = predict(variables, X_test)
+        test_fig_path = join(result_dirs['patch_plot'], f'test_{name}.png')
         plot_patches(X=X_test,
                      Y=Y_test,
                      Ŷ=Ŷ_test,
                      ymin=-1,
                      ymax=nclasses,
-                     classes=CLASSES)
+                     classes=CLASSES,
+                     figname=test_fig_path,
+                     dpi=300)
+
+    history_data_path = join(result_dirs['history_data'], 'history_data.pkl')
+    with open(history_data_path, 'wb') as f:
+        pickle.dump(histories, f)
 
     # Plot histories
     metrics = [*histories[learning_rates[0]]['train']]
@@ -156,10 +180,8 @@ for model_name, fcn_params in UNET_CONFIG['models'].items():
         metrics = ['loss', *metrics]
     nmetrics = len(metrics)
 
-    fig, axes = plt.subplots(nmetrics, 2, sharex=True, sharey='row')
+    fig, axes = plt.subplots(nmetrics, 2, sharex=True, sharey='row', dpi=300)
 
-    # TODO save plots
-    # TODO see if we are using metrics calculated at each gradient step... else optimize it!
     # TODO plot only chosen variables for specific classes (CONFIG)
     for part in ('train', 'test'):
         col = 0 if part == 'train' else 1
@@ -182,4 +204,8 @@ for model_name, fcn_params in UNET_CONFIG['models'].items():
         ax.legend()
         ax.grid(alpha=.2)
         ax.set_xlabel('Epoch')
+
+    history_fig_path = join(result_dirs['history_plot'], 'history.png')
+
+    fig.savefig(history_fig_path)
     plt.show()

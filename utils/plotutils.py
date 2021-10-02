@@ -23,7 +23,8 @@ def plot_patches(rows=6,
                  title=None,
                  show=False,
                  figsize=(8, 5),
-                 figname=None):
+                 figname=None,
+                 **kwargs):
     data = {}
     if X is not None:
         data['X'] = X
@@ -47,22 +48,17 @@ def plot_patches(rows=6,
                 N=len(class_colors),
             )
             ycmap_colors = ycmap(np.linspace(0, 1, len(class_colors)))
-            max_label = max(classes.main_names)
             nclasses = len(classes)
-            print(classes.main_names)
+            max_label = max(classes.main_names)
             nlabels = max_label + 1 - ymin
-            print(max_label)
-            print(ymin, 'ymin')
-            print(nlabels)
-            print(nclasses)
-            bounds = [ymin - .5, *range(max_label + 1), max_label + .5]
-            ncolors = len(class_colors)
+            # bounds = [ymin - .5, *range(max_label + 1), max_label + .5]
+            # ncolors = len(class_colors)
             # colors = class_cmap(np.linspace(0, 1, 20))
             # plt.imshow(colors[None, ...])
             # plt.show()
         else:
             created_cmap = False
-            ycmap = 'nippy_spectral'
+            ycmap = 'nipy_spectral'
 
     lims = {
         'X': {
@@ -85,7 +81,12 @@ def plot_patches(rows=6,
     cols = cols or (6 // mini_cols)
     total_cols = mini_cols * cols
 
-    fig, axes = plt.subplots(rows, total_cols, figsize=figsize)
+    fig, axes = plt.subplots(rows,
+                             total_cols,
+                             figsize=figsize,
+                             sharex=True,
+                             sharey=True,
+                             **kwargs)
 
     fig.suptitle(title)
 
@@ -112,17 +113,24 @@ def plot_patches(rows=6,
             ax.set_xticks([])
             ax.set_yticks([])
 
-    fig.subplots_adjust(top=.90, bottom=.2, left=.05, right=.95, hspace=.5)
+    if created_cmap:
+        fig.subplots_adjust(top=.90, bottom=.2, left=.05, right=.95, hspace=.5)
 
-    cbar_ax = fig.add_axes([.05, .05, .9, .05])
-    cbar_ax.imshow(ycmap_colors[None, :], aspect='auto')
-    cbar_ax.set_yticks([])
-    cbar_ax.set_xticks([*range(0, nlabels)])
-    unlabeled = ['Unlabeled'] if nlabels == nclasses + 1 else []
-    cbar_ax.set_xticklabels([
-        *unlabeled,
-        *[classes.descriptions.get(i, '') for i in range(nclasses)]
-    ])
+        cbar_ax = fig.add_axes([.05, .05, .9, .05])
+        cbar_ax.imshow(ycmap_colors[None, :], aspect='auto')
+        cbar_ax.set_yticks([])
+        cbar_ax.set_xticks([*range(0, nlabels)])
+        unlabeled = ['Unlabeled'] if ymin < 0 else []
+        cbar_ax.set_xticklabels([
+            *unlabeled,
+            *[classes.descriptions.get(i, '') for i in range(nclasses)]
+        ])
+    else:
+        fig.subplots_adjust(top=.90,
+                            bottom=.08,
+                            left=.05,
+                            right=.95,
+                            hspace=.5)
 
     # cbar_ax.set_xlim(-1.5,nclasses+.5)
     # cbar_norm = mpl.colors.BoundaryNorm(bounds, ncolors)
@@ -196,5 +204,14 @@ if __name__ == '__main__':
                  Ŷ=Ŷ[..., 0],
                  show=True,
                  title='Results',
-                 classes=classes,
+                 ymin=-1,
+                 classes=classes)
+
+    plot_patches(6,
+                 3,
+                 X=X[..., 0],
+                 Y=Y[..., 0],
+                 Ŷ=Ŷ[..., 0],
+                 show=True,
+                 title='Results',
                  ymin=-1)
