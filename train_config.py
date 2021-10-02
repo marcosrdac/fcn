@@ -73,12 +73,24 @@ PATCH_CONFIG['ignore_border'] = 5 / 100
 TRAIN_CONFIG = {}
 # - Independent labels to also keep track of metrics
 TRAIN_CONFIG['keep_label_info'] = [0]
+metrics_bsc = ['accuracy', 'precision']
+metrics_all = ['accuracy', 'precision', 'recall', 'f1-score']
+TRAIN_CONFIG['metrics'] = [
+    'loss', *metrics_bsc, *[f'{m}_0' for m in metrics_bsc]
+]
 TRAIN_CONFIG['batch_size'] = 20  # int or None
-TRAIN_CONFIG['max_epochs'] = 2  # 50
+TRAIN_CONFIG['max_epochs'] = 10000
 TRAIN_CONFIG['test_size'] = 1 / 3
 # TRAIN_CONFIG['learning_rates'] = 10 ** np.linspace(-1, 2, 8)
 # TRAIN_CONFIG['learning_rates'] = 1e-3, 1e-2, 1e-1,
 TRAIN_CONFIG['learning_rates'] = 2e-2,
+TRAIN_CONFIG['early_stopping'] = {
+    'enable': True,
+    'metric': 'accuracy',
+    'greater_is_better': True,
+    'patience': 20,
+    'delta': 0,
+}
 
 # Model settings
 UNET_CONFIG = {}
@@ -139,7 +151,7 @@ if __name__ == '__main__':
     def nprint(*args, **kwargs):
         return print(*['\n' + str(args[0]), *args[1:]], **kwargs)
 
-    nprint('Directories definitions:')
+    print('Directory definitions:')
     for dir_nick, dir_path in DATA_DIRS.items():
         if dir_nick == 'result_dirs':
             continue

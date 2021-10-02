@@ -111,7 +111,7 @@ def get_main_metrics(conf_matrix, keep_labels):
         for m, val in label_metrics.items():
             metrics[m] = val / nclasses + metrics.get(m, 0.)
             if keep_labels[label]:
-                label_m = f'label {label}\'s {m}'
+                label_m = f"{m}_{label}"
                 metrics[label_m] = val
     return metrics
 

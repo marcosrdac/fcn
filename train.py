@@ -11,6 +11,7 @@ from jax import random, numpy as jnp
 from flax import optim
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
+import seaborn as sns
 from model.train import build_batch_fcn
 from model.train import make_calc_grad, make_train_epoch, make_eval_epoch
 from model.metrics import xentropy_loss
@@ -19,16 +20,18 @@ from utils.datautils import open_all_patched
 from utils.plotutils import plot_patches
 from utils.abcutils import AccumulatingDict
 from utils.pretty import pprint
-from flax.training.checkpoints import save_checkpoint
+from utils.jaxutils import EarlyStopping
+from flax.training.checkpoints import save_checkpoint, restore_checkpoint
 
 NOW = datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f")
 
 environ['XLA_PYTHON_CLIENT_ALLOCATOR'] = 'platform'
 plt.style.use('dark_background')
+sns.set_context = 'paper'
 train_rng = random.PRNGKey(TRAIN_CONFIG['rngkeys']['train'])
 
 # Getting data
-until = 60  # change to None
+until = None  # change to None
 nclasses = len(CLASSES)
 X, Y = open_all_patched(DATA_DIRS['X'], DATA_DIRS['Y'])
 X, Y = np.concatenate(X), np.concatenate(Y)
@@ -91,6 +94,17 @@ for model_name, fcn_params in UNET_CONFIG['models'].items():
         variables = {'params': init_variables['params']}
         optimizer = optimizer_method.create(variables)
 
+        # defining early stopping strategy
+        es_config = TRAIN_CONFIG['early_stopping']
+        if es_config['enable']:
+            stop_strategy = EarlyStopping(
+                greater_is_better=es_config['greater_is_better'],
+                patience=es_config['patience'],
+                delta=es_config['delta'],
+            )
+        else:
+            stop_strategy = None
+
         # training loop
         time_train = [time()]
         for epoch in range(1, epochs + 1):
@@ -107,9 +121,15 @@ for model_name, fcn_params in UNET_CONFIG['models'].items():
                 variables = optimizer.target
 
                 # eval step
-                # TODO IS CUT EVEN NEEDED??
-                X_test_cut = X_test[:batch_size]
-                Y_test_cut = Y_test[:batch_size]
+                # TODO is cut even needed?? (i guess it isn't...)
+                # I cannot remember why I wrote this workaround now, but my
+                # code seems to support evaluating the whole test set now 
+                #X_test_cut = X_test[:batch_size]
+                #Y_test_cut = Y_test[:batch_size]
+
+                X_test_cut = X_test
+                Y_test_cut = Y_test
+
                 Y_masks = [(Y_test_cut == c).nonzero()
                            for c in range(nclasses)]
                 Y_joined_masks = (
@@ -130,15 +150,29 @@ for model_name, fcn_params in UNET_CONFIG['models'].items():
                       sep=' | ',
                       end='\n')
 
-                save_checkpoint(checkpoints_dir,
-                                variables,
-                                step=epoch,
-                                prefix='e=',
-                                keep=1000,
-                                overwrite=False)
+                checkpoint_path = save_checkpoint(checkpoints_dir,
+                                                  variables,
+                                                  step=epoch,
+                                                  prefix='',
+                                                  keep=1000,
+                                                  overwrite=False)
+                if stop_strategy:
+                    stop_strategy.update(test_metrics[es_config['metric']],
+                                         epoch)
+                    best_checkpoint = stop_strategy.best_checkpoint
+                    if stop_strategy.stop:
+                        break
+                else:
+                    best_checkpoint = epoch
 
             except KeyboardInterrupt:
                 break
+
+        variables = restore_checkpoint(checkpoints_dir,
+                                       target=variables,
+                                       step=best_checkpoint,
+                                       prefix='',
+                                       parallel=True)
 
         time_train.append(time())
         interval = time_train.pop() - time_train.pop()
@@ -178,11 +212,19 @@ for model_name, fcn_params in UNET_CONFIG['models'].items():
     if 'loss' in metrics:
         metrics.remove('loss')
         metrics = ['loss', *metrics]
-    nmetrics = len(metrics)
 
-    fig, axes = plt.subplots(nmetrics, 2, sharex=True, sharey='row', dpi=300)
+    # remove unwanted info from plots
+    metrics = [m for m in TRAIN_CONFIG['metrics'] if m in metrics]
 
-    # TODO plot only chosen variables for specific classes (CONFIG)
+    fig, axes = plt.subplots(len(metrics),
+                             2,
+                             figsize=(6, 10),
+                             dpi=300,
+                             sharex=True,
+                             sharey='row')
+
+    fig.subplots_adjust(left=.12)
+
     for part in ('train', 'test'):
         col = 0 if part == 'train' else 1
         axes[0, col].set_title(part.capitalize())
@@ -208,4 +250,3 @@ for model_name, fcn_params in UNET_CONFIG['models'].items():
     history_fig_path = join(result_dirs['history_plot'], 'history.png')
 
     fig.savefig(history_fig_path)
-    plt.show()

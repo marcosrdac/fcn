@@ -128,6 +128,7 @@ def make_eval_epoch(predict, loss_function, nclasses, keep_labels):
         loss = loss_function(Ŷ_logits, Y, nclasses, Y_joined_masks)
 
         Ŷ = jnp.argmax(Ŷ_logits, -1)
-        return Ŷ, eval_metrics(Ŷ, Y, Y_masks, keep_labels, loss=loss)
+        metrics = eval_metrics(Ŷ, Y, Y_masks, keep_labels, loss=loss)
+        return Ŷ, metrics
 
     return eval_epoch
