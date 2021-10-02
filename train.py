@@ -15,7 +15,7 @@ from model.train import make_calc_grad, make_train_epoch, make_eval_epoch
 from model.metrics import xentropy_loss
 from train_config import DATA_DIRS, CLASSES, UNET_CONFIG, TRAIN_CONFIG
 from utils.datautils import open_all_patched
-from utils.plotutils import show_data
+from utils.plotutils import plot_patches
 from utils.abcutils import AccumulatingDict
 from utils.pretty import pprint
 
@@ -134,17 +134,20 @@ for model_name, fcn_params in UNET_CONFIG['models'].items():
 
         # Plotting results
 
-        # TODO save plots for all learning rates
-        if len(learning_rates) == 1:
-            Ŷ_train, *mutated_vars = predict(variables, X_train)
-            show_data(X_train,
-                      Y_train,
-                      Ŷ_train,
-                      xmax=1,
-                      ymin=-1,
-                      ymax=nclasses)
-            Ŷ_test, *mutated_vars = predict(variables, X_test)
-            show_data(X_test, Y_test, Ŷ_test, xmax=1, ymin=-1, ymax=nclasses)
+        Ŷ_train, *mutated_vars = predict(variables, X_train)
+        plot_patches(X=X_train,
+                     Y=Y_train,
+                     Ŷ=Ŷ_train,
+                     ymin=-1,
+                     ymax=nclasses,
+                     classes=CLASSES)
+        Ŷ_test, *mutated_vars = predict(variables, X_test)
+        plot_patches(X=X_test,
+                     Y=Y_test,
+                     Ŷ=Ŷ_test,
+                     ymin=-1,
+                     ymax=nclasses,
+                     classes=CLASSES)
 
     # Plot histories
     metrics = [*histories[learning_rates[0]]['train']]
