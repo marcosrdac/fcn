@@ -43,7 +43,7 @@ OCEAN_CLASSES.create('Land cover', ['land'], color='brown')
 OIL_CLASSES = Classes()
 non_oil_name_sets = [n for i, n in OCEAN_CLASSES.names.items() if i > 0]
 non_oil_names = ['non-oil', *itertools.chain(*non_oil_name_sets)]
-OIL_CLASSES.create(OCEAN_CLASSES.descriptions[0], OCEAN_CLASSES.names[0])
+OIL_CLASSES.create(OCEAN_CLASSES.descriptions[0], OCEAN_CLASSES.names[0], color='red')
 OIL_CLASSES.create('Non-oil', non_oil_names, color='blue')
 # -- Test classes
 TEST_CLASSES = Classes()
@@ -51,7 +51,7 @@ TEST_CLASSES.create('Sea', ['sea'], color='blue')
 TEST_CLASSES.create('Fish', ['fish'], color='orange')
 TEST_CLASSES.create('Plant', ['plant'], color='green')
 # - Class set definition (IMPORTANT DEFINITION)
-CLASSES = OCEAN_CLASSES
+CLASSES = OIL_CLASSES
 
 # Input data opener
 # open_data = open_image  # usual
@@ -80,7 +80,7 @@ TRAIN_CONFIG['metrics'] = [
 ]
 TRAIN_CONFIG['batch_size'] = 20  # int or None
 TRAIN_CONFIG['max_epochs'] = 10000
-TRAIN_CONFIG['test_size'] = 1 / 3
+TRAIN_CONFIG['test_size'] = 1 / 4
 # TRAIN_CONFIG['learning_rates'] = 10 ** np.linspace(-1, 2, 8)
 # TRAIN_CONFIG['learning_rates'] = 1e-3, 1e-2, 1e-1,
 TRAIN_CONFIG['learning_rates'] = 2e-2,
