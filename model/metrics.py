@@ -26,6 +26,12 @@ def xentropy_loss(ŷ_logits, y, nclasses, idx=None):
 
 
 def get_conf_matrix(ŷ, y, y_masks):
+    '''
+    Takes predicted and true labels and compares them to produce a confusion
+    matrix. `y_masks` is a list of `nclasses` masks, one for each label used,
+    where masked values of element `i` in such are pixels of belonging to class
+    `i`.
+    '''
     nclasses = len(y_masks)
     conf_matrix = jnp.zeros((nclasses, nclasses), dtype=jnp.int32)
     for true_label in range(nclasses):
@@ -37,11 +43,13 @@ def get_conf_matrix(ŷ, y, y_masks):
 
 
 def true_positives(conf_matrix, label):
+    '''Calculates the number of true positives in the confusion matrix.'''
     tp = conf_matrix[label, label]
     return tp
 
 
 def false_positives(conf_matrix, label):
+    '''Calculates the number of false positives in the confusion matrix.'''
     def accum_false_positives(true_label, s):
         return s + lax.cond(
             true_label != label,
@@ -55,6 +63,7 @@ def false_positives(conf_matrix, label):
 
 
 def false_negatives(conf_matrix, label):
+    '''Calculates the number of false negatives in the confusion matrix.'''
     def accum_false_negatives(pred_label, s):
         return s + lax.cond(
             label != pred_label,
@@ -68,6 +77,10 @@ def false_negatives(conf_matrix, label):
 
 
 def get_num_cases(conf_matrix, label):
+    '''
+    Derives the number of the four cases (true/false positives, true/false
+    negatives)from a confusion matrix
+    '''
     total = conf_matrix.sum()
     tp = true_positives(conf_matrix, label)
     fp = false_positives(conf_matrix, label)
@@ -77,24 +90,29 @@ def get_num_cases(conf_matrix, label):
 
 
 def accuracy(cases):
+    '''Accuracy metric calculated from a dict with number of cases.'''
     return (cases['tp'] + cases['tn']) / cases['total']
 
 
 def precision(cases):
+    '''Precision metric calculated from a dict with number of cases.'''
     return cases['tp'] / (cases['tp'] + cases['fp'])
 
 
 def recall(cases):
+    '''Recall metric calculated from a dict with number of cases.'''
     return cases['tp'] / (cases['tp'] + cases['fn'])
 
 
 def f1_score(cases):
+    '''F1-score metric calculated from a dict with number of cases.'''
     p = precision(cases)
     r = recall(cases)
     return 2 * p * r / (p + r)
 
 
 def get_main_metrics_for_label(conf_matrix, label):
+    '''Calculates main metrics for a label from a confusion matrix.'''
     cases = get_num_cases(conf_matrix, label)
     metrics = {}
     for metric in (accuracy, precision, recall, f1_score):
@@ -104,6 +122,11 @@ def get_main_metrics_for_label(conf_matrix, label):
 
 
 def get_main_metrics(conf_matrix, keep_labels):
+    '''
+    Calculates main metrics for all labels from a confusion matrix, then
+    compute averages metrics as default output. `keep_labels` tells which
+    specific labels are also meant to have its metrics kept.
+    '''
     metrics = {}
     nclasses = conf_matrix.shape[0]
     for label in range(nclasses):
@@ -127,9 +150,8 @@ def eval_metrics(Ŷ, Y, Y_masks, keep_labels, **other_metrics):
 
 def overall_accuracy(ŷ, y):
     '''
-    Metric is affected by dataset unbalance, as oposed to the mean
-    accuracy, which is always equal to the overall accuracy when two
-    classes are used.
+    Overall accuracy metric. This is highly affected by dataset unbalance, as
+    oposed to the mean accuracy. They are equal if only two classes are used.
     '''
     return jnp.mean(ŷ == y)
 
