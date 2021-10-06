@@ -126,6 +126,7 @@ for model_name, fcn_params in UNET_CONFIG['models'].items():
                 # code seems to support evaluating the whole test set now 
                 #X_test_cut = X_test[:batch_size]
                 #Y_test_cut = Y_test[:batch_size]
+                # TODO after 13/10/2021: remve cut related words
 
                 X_test_cut = X_test
                 Y_test_cut = Y_test
@@ -203,6 +204,10 @@ for model_name, fcn_params in UNET_CONFIG['models'].items():
                      figname=test_fig_path,
                      dpi=300)
 
+    # turning histories into a simple dict for pickling
+    histories = {part: dict(metrics) for part, metrics in histories.items()}
+
+    # pickling
     history_data_path = join(result_dirs['history_data'], 'history_data.pkl')
     with open(history_data_path, 'wb') as f:
         pickle.dump(histories, f)
