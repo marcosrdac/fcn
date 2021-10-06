@@ -17,6 +17,7 @@ def build_batch_fcn(*args,
                     drop_init_rngkey=1,
                     drop_apply_rngkey=2,
                     **kwargs):
+    '''Wrapper for easily creating an FCN.'''
     model = BatchFCN(*args, **kwargs)
 
     # rngs initialization
@@ -42,18 +43,21 @@ def build_batch_fcn(*args,
 
 @jit
 def add_pytrees(tree_a, tree_b):
+    '''Adds leaves of two pytrees.'''
     tree_a_flat, unravel = ravel_pytree(tree_a)
     tree_b_flat, unravel = ravel_pytree(tree_b)
     return unravel(tree_a_flat + tree_b_flat)
 
 
 @jit
-def multiply_pytree(tree, coeficient):
+def multiply_pytree(tree, coefficient):
+    '''Multiplies leaves of a pytree by a coefficient.'''
     tree_flat, unravel = ravel_pytree(tree)
-    return unravel(coeficient * tree_flat)
+    return unravel(coefficient * tree_flat)
 
 
 def make_calc_grad(predict, loss_function, nclasses, keep_labels):
+    '''Makes a gradient calculator.'''
     @jit
     def calc_grad(variables, X, Y, Y_masks, Y_joined_masks):
         '''Train model with batched data.'''
@@ -75,6 +79,7 @@ def make_calc_grad(predict, loss_function, nclasses, keep_labels):
 
 
 def make_train_epoch(calc_grad, nclasses):
+    '''Makes an epoch trainer for the FCN model.'''
     def train_epoch(optimizer, X, Y, rng, batch_size=None, accum_grads=False):
         '''Trains model for an epoch.'''
         batch_size = batch_size or X.shape[0]
@@ -122,8 +127,10 @@ def make_train_epoch(calc_grad, nclasses):
 
 
 def make_eval_epoch(predict, loss_function, nclasses, keep_labels):
+    '''Creates a metric evaluator for an epoch.'''
     @jit
     def eval_epoch(variables, X, Y, Y_masks, Y_joined_masks):
+        '''Evaluates an epoch.'''
         Ŷ_logits, *_ = predict(variables, X, proba=True)
         loss = loss_function(Ŷ_logits, Y, nclasses, Y_joined_masks)
 
