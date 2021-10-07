@@ -43,7 +43,9 @@ OCEAN_CLASSES.create('Land cover', ['land'], color='brown')
 OIL_CLASSES = Classes()
 non_oil_name_sets = [n for i, n in OCEAN_CLASSES.names.items() if i > 0]
 non_oil_names = ['non-oil', *itertools.chain(*non_oil_name_sets)]
-OIL_CLASSES.create(OCEAN_CLASSES.descriptions[0], OCEAN_CLASSES.names[0], color='red')
+OIL_CLASSES.create(OCEAN_CLASSES.descriptions[0],
+                   OCEAN_CLASSES.names[0],
+                   color='red')
 OIL_CLASSES.create('Non-oil', non_oil_names, color='blue')
 # -- Test classes
 TEST_CLASSES = Classes()
@@ -63,7 +65,7 @@ mask_dtype = np.int8  # no unsigned types here!
 # Train data patch settings
 PATCH_CONFIG = {}
 # - Modify these parameters
-patch_size = 64
+patch_size = 128
 overlap = False  # False or ratio
 PATCH_CONFIG['shape'] = (patch_size, patch_size)
 PATCH_CONFIG['overlap'] = (overlap, overlap) if overlap else False
@@ -79,7 +81,7 @@ TRAIN_CONFIG['metrics'] = [
     'loss', *metrics_bsc, *[f'{m}_0' for m in metrics_bsc]
 ]
 TRAIN_CONFIG['batch_size'] = 20  # int or None
-TRAIN_CONFIG['max_epochs'] = 10000
+TRAIN_CONFIG['max_epochs'] = 1000
 TRAIN_CONFIG['test_size'] = 1 / 4
 # TRAIN_CONFIG['learning_rates'] = 10 ** np.linspace(-1, 2, 8)
 # TRAIN_CONFIG['learning_rates'] = 1e-3, 1e-2, 1e-1,
